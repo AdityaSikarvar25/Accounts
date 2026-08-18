@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dharamshala Accounts</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body class="login-page">
+  <div class="login-card">
+    <div class="login-logo">🏛️</div>
+    <h1 class="login-title">Dharamshala Accounts</h1>
+    <p class="login-subtitle">Manage your accounts and daily transactions</p>
+    <form id="loginForm">
+      <div class="form-group">
+        <label for="password">Password</label>
+        <input type="password" id="password" placeholder="Enter password" required autofocus>
+      </div>
+      <p id="loginError" class="error-msg" style="display:none"></p>
+      <button type="submit" class="btn btn-primary btn-full">Login</button>
+    </form>
+  </div>
+
+  <script src="/static/js/config.js"></script>
+  <script src="/static/js/auth.js"></script>
+  <script>
+    document.getElementById('loginForm').addEventListener('submit', async e => {
+      e.preventDefault();
+      const errEl = document.getElementById('loginError');
+      errEl.style.display = 'none';
+      try {
+        const res = await apiFetch('/api/login', {
+          method: 'POST',
+          body: JSON.stringify({ password: document.getElementById('password').value }),
+        });
+        if (res && res.ok) {
+          window.location.href = '/dashboard';
+        } else {
+          const data = res ? await res.json() : {};
+          errEl.textContent = data.error || 'Login failed. Please try again.';
+          errEl.style.display = 'block';
+        }
+      } catch (err) {
+        errEl.textContent = err.message;
+        errEl.style.display = 'block';
+      }
+    });
+  </script>
+</body>
+</html>

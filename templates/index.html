@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dharamshala Accounts</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <header class="app-header">
+    <div class="container">
+      <div class="header-inner">
+        <div>
+          <h1 class="app-title">🏛️ Dharamshala Accounts</h1>
+          <p class="app-subtitle">Manage your accounts and daily transactions</p>
+        </div>
+        <button id="logoutBtn" class="btn btn-ghost">Logout</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="container main-content">
+    <div class="section-header">
+      <h2 class="section-title">All Accounts</h2>
+      <button id="addAccountBtn" class="btn btn-primary">+ Add Account</button>
+    </div>
+
+    <div id="accountsGrid" class="accounts-grid"></div>
+
+    <div id="emptyState" style="display:none" class="empty-state">
+      <div class="empty-icon">📂</div>
+      <h3>No accounts yet</h3>
+      <p>Create your first account to get started.</p>
+      <button onclick="document.getElementById('addAccountBtn').click()" class="btn btn-primary">
+        + Add Account
+      </button>
+    </div>
+  </main>
+
+  <!-- Add Account Modal -->
+  <div id="addAccountModal" class="modal-backdrop" style="display:none">
+    <div class="modal">
+      <h3 class="modal-title">Create New Account</h3>
+      <form id="addAccountForm">
+        <div class="form-group">
+          <label for="accountNameInput">Account Name</label>
+          <input type="text" id="accountNameInput" placeholder="e.g. Food Account"
+                 maxlength="200" required>
+        </div>
+        <p id="addAccountError" class="error-msg" style="display:none"></p>
+        <div class="modal-actions">
+          <button type="button" id="cancelAdd" class="btn btn-ghost">Cancel</button>
+          <button type="submit" class="btn btn-primary">Create Account</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Delete Confirm Modal -->
+  <div id="deleteModal" class="modal-backdrop" style="display:none">
+    <div class="modal">
+      <h3 class="modal-title">Delete Account?</h3>
+      <p id="deleteMsg" class="modal-body-text"></p>
+      <p class="modal-body-text" style="color:var(--danger);font-size:0.85rem">
+        This action cannot be undone.
+      </p>
+      <div class="modal-actions">
+        <button id="cancelDelete" class="btn btn-ghost">Cancel</button>
+        <button id="confirmDeleteBtn" class="btn btn-danger">Delete Account</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/js/config.js"></script>
+  <script src="/static/js/auth.js"></script>
+  <script src="/static/js/dashboard.js"></script>
+</body>
+</html>

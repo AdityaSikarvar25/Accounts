@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Account — Dharamshala Accounts</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <header class="app-header">
+    <div class="container">
+      <div class="header-inner">
+        <div>
+          <a href="/dashboard" class="back-link">← Back to Accounts</a>
+          <h1 class="app-title" id="accountName">Loading...</h1>
+        </div>
+        <button id="logoutBtn" class="btn btn-ghost">Logout</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="container main-content">
+    <!-- Summary cards -->
+    <div class="summary-grid">
+      <div class="summary-card">
+        <div class="summary-label">Total Credit</div>
+        <div class="summary-value text-credit" id="totalCredit">₹0</div>
+      </div>
+      <div class="summary-card">
+        <div class="summary-label">Total Debit</div>
+        <div class="summary-value text-debit" id="totalDebit">₹0</div>
+      </div>
+      <div class="summary-card summary-balance-card">
+        <div class="summary-label">Balance</div>
+        <div class="summary-value text-credit" id="balance">₹0</div>
+      </div>
+    </div>
+
+    <!-- Add buttons -->
+    <div class="txn-actions">
+      <button id="addCreditBtn" class="btn btn-add-credit">+ Add Credit</button>
+      <button id="addDebitBtn" class="btn btn-add-debit">+ Add Debit</button>
+    </div>
+
+    <!-- Transaction columns -->
+    <div class="txn-columns">
+      <section class="txn-column">
+        <h2 class="txn-col-title txn-col-credit">Credit</h2>
+        <div id="creditList"></div>
+        <p id="creditEmpty" class="empty-state-small" style="display:none">
+          No credit transactions yet.
+        </p>
+      </section>
+      <section class="txn-column">
+        <h2 class="txn-col-title txn-col-debit">Debit</h2>
+        <div id="debitList"></div>
+        <p id="debitEmpty" class="empty-state-small" style="display:none">
+          No debit transactions yet.
+        </p>
+      </section>
+    </div>
+  </main>
+
+  <!-- Add Transaction Modal -->
+  <div id="addTxnModal" class="modal-backdrop" style="display:none">
+    <div class="modal">
+      <h3 class="modal-title" id="addTxnTitle">Add Transaction</h3>
+      <form id="addTxnForm">
+        <input type="hidden" id="txnTypeInput">
+        <div class="form-group">
+          <label>Amount (₹)</label>
+          <input type="number" id="txnAmount" placeholder="e.g. 5000"
+                 min="0.01" step="0.01" required>
+        </div>
+        <div class="form-group">
+          <label>Description</label>
+          <input type="text" id="txnDesc" placeholder="e.g. Donation received"
+                 maxlength="500" required>
+        </div>
+        <div class="form-group">
+          <label>Date</label>
+          <input type="date" id="txnDate" required>
+        </div>
+        <div class="form-group">
+          <label>Notes <span class="label-optional">(optional)</span></label>
+          <textarea id="txnNotes" placeholder="Additional details..."></textarea>
+        </div>
+        <p id="addTxnError" class="error-msg" style="display:none"></p>
+        <div class="modal-actions">
+          <button type="button" id="cancelAddTxn" class="btn btn-ghost">Cancel</button>
+          <button type="submit" class="btn btn-primary">Add</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Delete Transaction Modal -->
+  <div id="deleteTxnModal" class="modal-backdrop" style="display:none">
+    <div class="modal">
+      <h3 class="modal-title">Delete Transaction?</h3>
+      <p class="modal-body-text">This action cannot be undone.</p>
+      <div class="modal-actions">
+        <button id="cancelDeleteTxn" class="btn btn-ghost">Cancel</button>
+        <button id="confirmDeleteTxn" class="btn btn-danger">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/js/config.js"></script>
+  <script src="/static/js/auth.js"></script>
+  <script src="/static/js/account.js"></script>
+</body>
+</html>
