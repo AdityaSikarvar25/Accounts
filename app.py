@@ -475,11 +475,10 @@ def api_account_statement(account_id):
                           Transaction.created_at.desc())
                 .all())
         pdf_bytes = _generate_statement_pdf(account, txns)
-    safe = account.name.replace(' ', '_').replace('/', '_')
     return Response(
         pdf_bytes,
         mimetype='application/pdf',
-        headers={'Content-Disposition': f'inline; filename="statement_{safe}.pdf"'},
+        headers={'Content-Disposition': 'inline; filename="account_statement.pdf"'},
     )
 
 
