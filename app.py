@@ -5,7 +5,7 @@ from decimal import Decimal
 from functools import wraps
 
 from dotenv import load_dotenv
-from flask import Flask, request, jsonify, session, render_template, redirect
+from flask import Flask, request, jsonify, session, render_template, redirect, Response
 from flask_cors import CORS
 from sqlalchemy import create_engine, Column, String, Numeric, Date, DateTime, Text, ForeignKey
 from sqlalchemy.orm import DeclarativeBase, Session, relationship, joinedload
@@ -304,6 +304,183 @@ def api_delete_transaction(transaction_id):
         db.delete(txn)
         db.commit()
         return jsonify({'message': 'deleted'})
+
+
+# ── Statement PDF ─────────────────────────────────────────────────────────────
+
+def _fmt_inr(amount):
+    """INR formatting for PDF (uses 'Rs.' — Helvetica lacks the ₹ glyph)."""
+    amount = float(amount)
+    negative = amount < 0
+    amount = abs(amount)
+    integer_part = int(amount)
+    frac = round((amount - integer_part) * 100)
+    s = str(integer_part)
+    if len(s) <= 3:
+        result = s
+    else:
+        result = s[-3:]
+        s = s[:-3]
+        while len(s) > 2:
+            result = s[-2:] + ',' + result
+            s = s[:-2]
+        result = s + ',' + result
+    if frac:
+        result += f'.{frac:02d}'
+    return ('-Rs. ' if negative else 'Rs. ') + result
+
+
+def _fmt_date_short(d):
+    return f"{d.day:02d}/{d.month:02d}/{str(d.year)[2:]}"
+
+
+def _fmt_date_long(d):
+    months = ['January','February','March','April','May','June',
+              'July','August','September','October','November','December']
+    return f"{d.day} {months[d.month - 1]} {d.year}"
+
+
+def _generate_statement_pdf(account, transactions):
+    from io import BytesIO
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors
+    from reportlab.lib.units import cm
+    from reportlab.lib.enums import TA_CENTER, TA_RIGHT
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.platypus import (SimpleDocTemplate, Table, TableStyle,
+                                    Paragraph, Spacer, HRFlowable)
+
+    buf = BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4,
+                            leftMargin=2*cm, rightMargin=2*cm,
+                            topMargin=2*cm, bottomMargin=2*cm)
+    W = A4[0] - 4*cm  # usable width ≈ 17 cm
+
+    def style(name, **kw):
+        return ParagraphStyle(name, **kw)
+
+    story = []
+
+    # Header
+    story.append(Paragraph('ACCOUNT STATEMENT', style(
+        's1', fontName='Helvetica-Bold', fontSize=18,
+        alignment=TA_CENTER, spaceAfter=6)))
+    story.append(Paragraph(account.name, style(
+        's2', fontName='Helvetica-Bold', fontSize=13,
+        alignment=TA_CENTER, spaceAfter=4)))
+    story.append(Paragraph(f'Generated: {_fmt_date_long(date.today())}', style(
+        's3', fontName='Helvetica', fontSize=10,
+        alignment=TA_CENTER, textColor=colors.HexColor('#64748b'), spaceAfter=14)))
+    story.append(HRFlowable(width='100%', thickness=1.5,
+                            color=colors.HexColor('#1e293b')))
+    story.append(Spacer(1, 0.5*cm))
+
+    # Transaction table
+    date_w, credit_w, debit_w = 2.4*cm, 3.4*cm, 3.4*cm
+    desc_w = W - date_w - credit_w - debit_w
+    col_widths = [date_w, desc_w, credit_w, debit_w]
+
+    total_credit = Decimal(0)
+    total_debit = Decimal(0)
+    rows = []
+    for t in transactions:
+        if t.type == 'credit':
+            total_credit += t.amount
+            c_str, d_str = _fmt_inr(float(t.amount)), ''
+        else:
+            total_debit += t.amount
+            c_str, d_str = '', _fmt_inr(float(t.amount))
+        rows.append([_fmt_date_short(t.transaction_date), t.description, c_str, d_str])
+
+    empty = not rows
+    if empty:
+        rows = [['', 'No transactions recorded for this account.', '', '']]
+
+    data = [['Date', 'Description', 'Credit (Rs.)', 'Debit (Rs.)']] + rows
+
+    tbl = Table(data, colWidths=col_widths, repeatRows=1)
+    ts = [
+        ('BACKGROUND',   (0, 0), (-1,  0), colors.HexColor('#1e293b')),
+        ('TEXTCOLOR',    (0, 0), (-1,  0), colors.white),
+        ('FONTNAME',     (0, 0), (-1,  0), 'Helvetica-Bold'),
+        ('FONTSIZE',     (0, 0), (-1,  0), 9),
+        ('ALIGN',        (0, 0), (-1,  0), 'CENTER'),
+        ('TOPPADDING',   (0, 0), (-1,  0), 7),
+        ('BOTTOMPADDING',(0, 0), (-1,  0), 7),
+        ('FONTNAME',     (0, 1), (-1, -1), 'Helvetica'),
+        ('FONTSIZE',     (0, 1), (-1, -1), 9),
+        ('ALIGN',        (0, 1), ( 0, -1), 'CENTER'),   # Date
+        ('ALIGN',        (1, 1), ( 1, -1), 'LEFT'),     # Description
+        ('ALIGN',        (2, 1), (-1, -1), 'RIGHT'),    # Credit / Debit
+        ('VALIGN',       (0, 0), (-1, -1), 'MIDDLE'),
+        ('TOPPADDING',   (0, 1), (-1, -1), 5),
+        ('BOTTOMPADDING',(0, 1), (-1, -1), 5),
+        ('LEFTPADDING',  (0, 0), (-1, -1), 6),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+        ('ROWBACKGROUNDS',(0,1), (-1, -1), [colors.white, colors.HexColor('#f8fafc')]),
+        ('GRID',         (0, 0), (-1, -1), 0.5, colors.HexColor('#cbd5e1')),
+        ('LINEBELOW',    (0, 0), (-1,  0), 1.5, colors.HexColor('#1e293b')),
+    ]
+    if empty:
+        ts += [
+            ('SPAN',      (0, 1), (-1, 1)),
+            ('ALIGN',     (0, 1), (-1, 1), 'CENTER'),
+            ('TEXTCOLOR', (0, 1), (-1, 1), colors.HexColor('#64748b')),
+        ]
+    tbl.setStyle(TableStyle(ts))
+    story.append(tbl)
+    story.append(Spacer(1, 0.75*cm))
+
+    # Summary
+    net = total_credit - total_debit
+    sum_data = [
+        ['Total Credit',   _fmt_inr(float(total_credit))],
+        ['Total Debit',    _fmt_inr(float(total_debit))],
+        ['Net Difference', _fmt_inr(float(net))],
+    ]
+    sum_tbl = Table(sum_data, colWidths=[W - 4*cm, 4*cm])
+    sum_tbl.setStyle(TableStyle([
+        ('FONTNAME',     (0, 0), (-1,  1), 'Helvetica'),
+        ('FONTNAME',     (0, 2), (-1,  2), 'Helvetica-Bold'),
+        ('FONTSIZE',     (0, 0), (-1,  1), 10),
+        ('FONTSIZE',     (0, 2), (-1,  2), 11),
+        ('ALIGN',        (0, 0), (-1, -1), 'RIGHT'),
+        ('TOPPADDING',   (0, 0), (-1, -1), 4),
+        ('BOTTOMPADDING',(0, 0), (-1, -1), 4),
+        ('LEFTPADDING',  (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+        ('LINEBELOW',    (0, 1), (-1,  1), 0.5, colors.HexColor('#cbd5e1')),
+        ('LINEABOVE',    (0, 2), (-1,  2), 1,   colors.black),
+        ('LINEBELOW',    (0, 2), (-1,  2), 2,   colors.black),
+    ]))
+    story.append(sum_tbl)
+
+    doc.build(story)
+    return buf.getvalue()
+
+
+@app.route('/api/accounts/<account_id>/statement')
+@require_auth
+def api_account_statement(account_id):
+    uid = parse_uuid(account_id)
+    if not uid:
+        return jsonify({'error': 'Account not found'}), 404
+    with Session(engine) as db:
+        account = db.get(Account, uid)
+        if not account:
+            return jsonify({'error': 'Account not found'}), 404
+        txns = (db.query(Transaction)
+                .filter_by(account_id=uid)
+                .order_by(Transaction.transaction_date.desc(),
+                          Transaction.created_at.desc())
+                .all())
+        pdf_bytes = _generate_statement_pdf(account, txns)
+    safe = account.name.replace(' ', '_').replace('/', '_')
+    return Response(
+        pdf_bytes,
+        mimetype='application/pdf',
+        headers={'Content-Disposition': f'inline; filename="statement_{safe}.pdf"'},
+    )
 
 
 # ── Error handlers ────────────────────────────────────────────────────────────

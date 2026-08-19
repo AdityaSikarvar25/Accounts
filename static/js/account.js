@@ -91,6 +91,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('logoutBtn').addEventListener('click', logout);
   document.getElementById('addCreditBtn').addEventListener('click', () => openAddModal('credit'));
   document.getElementById('addDebitBtn').addEventListener('click', () => openAddModal('debit'));
+  document.getElementById('printStatementBtn').addEventListener('click', () => {
+    window.open(API_BASE + `/api/accounts/${accountId}/statement`, '_blank');
+  });
   document.getElementById('cancelAddTxn').addEventListener('click', () => closeModal('addTxnModal'));
   document.getElementById('cancelDeleteTxn').addEventListener('click', () => closeModal('deleteTxnModal'));
 
