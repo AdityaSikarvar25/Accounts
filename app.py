@@ -309,7 +309,7 @@ def api_delete_transaction(transaction_id):
 # ── Statement PDF ─────────────────────────────────────────────────────────────
 
 def _fmt_inr(amount):
-    """INR formatting for PDF (uses 'Rs.' — Helvetica lacks the ₹ glyph)."""
+    """INR formatting for PDF (uses ASCII 'Rs.' to avoid ₹ glyph variance across fonts)."""
     amount = float(amount)
     negative = amount < 0
     amount = abs(amount)
@@ -341,47 +341,53 @@ def _fmt_date_long(d):
 
 
 def _generate_statement_pdf(account, transactions):
-    from io import BytesIO
-    from reportlab.lib.pagesizes import A4
-    from reportlab.lib import colors
-    from reportlab.lib.units import cm
-    from reportlab.lib.enums import TA_CENTER, TA_RIGHT
-    from reportlab.lib.styles import ParagraphStyle
-    from reportlab.platypus import (SimpleDocTemplate, Table, TableStyle,
-                                    Paragraph, Spacer, HRFlowable)
+    import os
+    from fpdf import FPDF
+    from fpdf.enums import XPos, YPos
 
-    buf = BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=A4,
-                            leftMargin=2*cm, rightMargin=2*cm,
-                            topMargin=2*cm, bottomMargin=2*cm)
-    W = A4[0] - 4*cm  # usable width ≈ 17 cm
+    base = os.path.dirname(os.path.abspath(__file__))
+    fonts = os.path.join(base, 'static', 'fonts')
 
-    def style(name, **kw):
-        return ParagraphStyle(name, **kw)
+    pdf = FPDF()
+    pdf.set_margins(20, 20, 20)
+    pdf.add_page()
 
-    story = []
+    # NotoSans covers Latin/numbers; NotoSansGujarati is fallback for Gujarati
+    pdf.add_font('NotoSans', '',  os.path.join(fonts, 'NotoSans-Regular.ttf'))
+    pdf.add_font('NotoSans', 'B', os.path.join(fonts, 'NotoSans-Bold.ttf'))
+    pdf.add_font('NotoGuj',  '',  os.path.join(fonts, 'NotoSansGujarati-Regular.ttf'))
+    pdf.add_font('NotoGuj',  'B', os.path.join(fonts, 'NotoSansGujarati-Bold.ttf'))
+    pdf.set_fallback_fonts(['NotoGuj'])
 
-    # Header
-    story.append(Paragraph('ACCOUNT STATEMENT', style(
-        's1', fontName='Helvetica-Bold', fontSize=18,
-        alignment=TA_CENTER, spaceAfter=6)))
-    story.append(Paragraph(account.name, style(
-        's2', fontName='Helvetica-Bold', fontSize=13,
-        alignment=TA_CENTER, spaceAfter=4)))
-    story.append(Paragraph(f'Generated: {_fmt_date_long(date.today())}', style(
-        's3', fontName='Helvetica', fontSize=10,
-        alignment=TA_CENTER, textColor=colors.HexColor('#64748b'), spaceAfter=14)))
-    story.append(HRFlowable(width='100%', thickness=1.5,
-                            color=colors.HexColor('#1e293b')))
-    story.append(Spacer(1, 0.5*cm))
+    W = 170  # usable width mm (A4 210 - 2*20 margins)
 
-    # Transaction table
-    date_w, credit_w, debit_w = 2.4*cm, 3.4*cm, 3.4*cm
-    desc_w = W - date_w - credit_w - debit_w
-    col_widths = [date_w, desc_w, credit_w, debit_w]
+    # ── Header ────────────────────────────────────────────────────────────────
+    pdf.set_font('NotoSans', 'B', 18)
+    pdf.cell(W, 10, 'ACCOUNT STATEMENT', align='C',
+             new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+    pdf.set_font('NotoSans', 'B', 13)
+    pdf.cell(W, 8, account.name, align='C',
+             new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+    pdf.set_font('NotoSans', '', 10)
+    pdf.set_text_color(100, 116, 139)
+    pdf.cell(W, 7, f'Generated: {_fmt_date_long(date.today())}', align='C',
+             new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.set_text_color(0, 0, 0)
+
+    y = pdf.get_y() + 3
+    pdf.set_draw_color(30, 41, 59)
+    pdf.set_line_width(0.5)
+    pdf.line(pdf.l_margin, y, pdf.l_margin + W, y)
+    pdf.set_y(y + 5)
+
+    # ── Transaction table ─────────────────────────────────────────────────────
+    date_w, credit_w, debit_w = 25, 35, 35
+    desc_w = W - date_w - credit_w - debit_w  # 75 mm
 
     total_credit = Decimal(0)
-    total_debit = Decimal(0)
+    total_debit  = Decimal(0)
     rows = []
     for t in transactions:
         if t.type == 'credit':
@@ -390,73 +396,70 @@ def _generate_statement_pdf(account, transactions):
         else:
             total_debit += t.amount
             c_str, d_str = '', _fmt_inr(float(t.amount))
-        rows.append([_fmt_date_short(t.transaction_date), t.description, c_str, d_str])
+        rows.append((_fmt_date_short(t.transaction_date), t.description, c_str, d_str))
 
-    empty = not rows
-    if empty:
-        rows = [['', 'No transactions recorded for this account.', '', '']]
+    def _tbl_cell(w, h, txt, align='L', fill=False, border='B'):
+        pdf.cell(w, h, txt, align=align, fill=fill, border=border,
+                 new_x=XPos.RIGHT, new_y=YPos.TOP)
 
-    data = [['Date', 'Description', 'Credit (Rs.)', 'Debit (Rs.)']] + rows
+    # Table header
+    rh = 8
+    pdf.set_font('NotoSans', 'B', 9)
+    pdf.set_fill_color(30, 41, 59)
+    pdf.set_text_color(255, 255, 255)
+    _tbl_cell(date_w,   rh, 'Date',         align='C', fill=True, border=0)
+    _tbl_cell(desc_w,   rh, 'Description',  align='C', fill=True, border=0)
+    _tbl_cell(credit_w, rh, 'Credit (Rs.)', align='C', fill=True, border=0)
+    pdf.cell(debit_w, rh, 'Debit (Rs.)', align='C', fill=True, border=0,
+             new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.set_text_color(0, 0, 0)
 
-    tbl = Table(data, colWidths=col_widths, repeatRows=1)
-    ts = [
-        ('BACKGROUND',   (0, 0), (-1,  0), colors.HexColor('#1e293b')),
-        ('TEXTCOLOR',    (0, 0), (-1,  0), colors.white),
-        ('FONTNAME',     (0, 0), (-1,  0), 'Helvetica-Bold'),
-        ('FONTSIZE',     (0, 0), (-1,  0), 9),
-        ('ALIGN',        (0, 0), (-1,  0), 'CENTER'),
-        ('TOPPADDING',   (0, 0), (-1,  0), 7),
-        ('BOTTOMPADDING',(0, 0), (-1,  0), 7),
-        ('FONTNAME',     (0, 1), (-1, -1), 'Helvetica'),
-        ('FONTSIZE',     (0, 1), (-1, -1), 9),
-        ('ALIGN',        (0, 1), ( 0, -1), 'CENTER'),   # Date
-        ('ALIGN',        (1, 1), ( 1, -1), 'LEFT'),     # Description
-        ('ALIGN',        (2, 1), (-1, -1), 'RIGHT'),    # Credit / Debit
-        ('VALIGN',       (0, 0), (-1, -1), 'MIDDLE'),
-        ('TOPPADDING',   (0, 1), (-1, -1), 5),
-        ('BOTTOMPADDING',(0, 1), (-1, -1), 5),
-        ('LEFTPADDING',  (0, 0), (-1, -1), 6),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 6),
-        ('ROWBACKGROUNDS',(0,1), (-1, -1), [colors.white, colors.HexColor('#f8fafc')]),
-        ('GRID',         (0, 0), (-1, -1), 0.5, colors.HexColor('#cbd5e1')),
-        ('LINEBELOW',    (0, 0), (-1,  0), 1.5, colors.HexColor('#1e293b')),
-    ]
-    if empty:
-        ts += [
-            ('SPAN',      (0, 1), (-1, 1)),
-            ('ALIGN',     (0, 1), (-1, 1), 'CENTER'),
-            ('TEXTCOLOR', (0, 1), (-1, 1), colors.HexColor('#64748b')),
-        ]
-    tbl.setStyle(TableStyle(ts))
-    story.append(tbl)
-    story.append(Spacer(1, 0.75*cm))
+    # Table rows
+    pdf.set_font('NotoSans', '', 9)
+    rh = 7
+    fill_colors = [(255, 255, 255), (248, 250, 252)]
+    if not rows:
+        pdf.set_fill_color(*fill_colors[0])
+        pdf.set_text_color(100, 116, 139)
+        pdf.cell(W, rh, 'No transactions recorded for this account.',
+                 align='C', fill=True, border='B',
+                 new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.set_text_color(0, 0, 0)
+    else:
+        for i, (d, desc, credit, debit) in enumerate(rows):
+            pdf.set_fill_color(*fill_colors[i % 2])
+            _tbl_cell(date_w,   rh, d,      align='C', fill=True)
+            _tbl_cell(desc_w,   rh, desc,   align='L', fill=True)
+            _tbl_cell(credit_w, rh, credit, align='R', fill=True)
+            pdf.cell(debit_w, rh, debit, align='R', fill=True, border='B',
+                     new_x=XPos.LMARGIN, new_y=YPos.NEXT)
 
-    # Summary
+    # ── Summary ───────────────────────────────────────────────────────────────
     net = total_credit - total_debit
-    sum_data = [
-        ['Total Credit',   _fmt_inr(float(total_credit))],
-        ['Total Debit',    _fmt_inr(float(total_debit))],
-        ['Net Difference', _fmt_inr(float(net))],
-    ]
-    sum_tbl = Table(sum_data, colWidths=[W - 4*cm, 4*cm])
-    sum_tbl.setStyle(TableStyle([
-        ('FONTNAME',     (0, 0), (-1,  1), 'Helvetica'),
-        ('FONTNAME',     (0, 2), (-1,  2), 'Helvetica-Bold'),
-        ('FONTSIZE',     (0, 0), (-1,  1), 10),
-        ('FONTSIZE',     (0, 2), (-1,  2), 11),
-        ('ALIGN',        (0, 0), (-1, -1), 'RIGHT'),
-        ('TOPPADDING',   (0, 0), (-1, -1), 4),
-        ('BOTTOMPADDING',(0, 0), (-1, -1), 4),
-        ('LEFTPADDING',  (0, 0), (-1, -1), 0),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
-        ('LINEBELOW',    (0, 1), (-1,  1), 0.5, colors.HexColor('#cbd5e1')),
-        ('LINEABOVE',    (0, 2), (-1,  2), 1,   colors.black),
-        ('LINEBELOW',    (0, 2), (-1,  2), 2,   colors.black),
-    ]))
-    story.append(sum_tbl)
+    pdf.ln(4)
 
-    doc.build(story)
-    return buf.getvalue()
+    lbl_w = W - 45
+    val_w = 45
+
+    pdf.set_font('NotoSans', '', 10)
+    for label, amt in (('Total Credit', total_credit), ('Total Debit', total_debit)):
+        pdf.cell(lbl_w, 7, label, align='R', new_x=XPos.RIGHT, new_y=YPos.TOP)
+        pdf.cell(val_w, 7, _fmt_inr(float(amt)), align='R',
+                 new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+    # separator line above Net Difference
+    sep_y = pdf.get_y()
+    pdf.set_draw_color(0, 0, 0)
+    pdf.set_line_width(0.4)
+    pdf.line(pdf.l_margin + lbl_w, sep_y, pdf.l_margin + W, sep_y)
+    pdf.set_y(sep_y)
+
+    pdf.set_font('NotoSans', 'B', 11)
+    pdf.cell(lbl_w, 8, 'Net Difference', align='R', new_x=XPos.RIGHT, new_y=YPos.TOP)
+    pdf.cell(val_w, 8, _fmt_inr(float(net)), align='R',
+             new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+
+    return bytes(pdf.output())
 
 
 @app.route('/api/accounts/<account_id>/statement')
