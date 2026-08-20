@@ -358,6 +358,7 @@ def _generate_statement_pdf(account, transactions):
     pdf.add_font('NotoGuj',  '',  os.path.join(fonts, 'NotoSansGujarati-Regular.ttf'))
     pdf.add_font('NotoGuj',  'B', os.path.join(fonts, 'NotoSansGujarati-Bold.ttf'))
     pdf.set_fallback_fonts(['NotoGuj'])
+    pdf.set_text_shaping(True)  # HarfBuzz GSUB/GPOS for correct Gujarati conjuncts/matras
 
     W = 170  # usable width mm (A4 210 - 2*20 margins)
 
