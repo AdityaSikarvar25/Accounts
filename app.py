@@ -306,10 +306,9 @@ def api_delete_transaction(transaction_id):
         return jsonify({'message': 'deleted'})
 
 
-# ── Statement PDF ─────────────────────────────────────────────────────────────
+# ── Statement DOCX ────────────────────────────────────────────────────────────
 
 def _fmt_inr(amount):
-    """INR formatting for PDF (uses ASCII 'Rs.' to avoid ₹ glyph variance across fonts)."""
     amount = float(amount)
     negative = amount < 0
     amount = abs(amount)
@@ -327,7 +326,7 @@ def _fmt_inr(amount):
         result = s + ',' + result
     if frac:
         result += f'.{frac:02d}'
-    return ('-Rs. ' if negative else 'Rs. ') + result
+    return ('₹ -' if negative else '₹ ') + result
 
 
 def _fmt_date_short(d):
@@ -340,127 +339,131 @@ def _fmt_date_long(d):
     return f"{d.day} {months[d.month - 1]} {d.year}"
 
 
-def _generate_statement_pdf(account, transactions):
-    import os
-    from fpdf import FPDF
-    from fpdf.enums import XPos, YPos
+def _generate_statement_docx(account, transactions):
+    from io import BytesIO
+    from docx import Document
+    from docx.shared import Pt, Cm, RGBColor
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.oxml.ns import qn
+    from docx.oxml import OxmlElement
 
-    base = os.path.dirname(os.path.abspath(__file__))
-    fonts = os.path.join(base, 'static', 'fonts')
+    FONT = 'Nirmala UI'
+    DARK, LIGHT, WHITE, ALT = '1e293b', 'e2e8f0', 'FFFFFF', 'f8fafc'
 
-    pdf = FPDF()
-    pdf.set_margins(20, 20, 20)
-    pdf.add_page()
+    def _style(run, size=None, bold=False, color=None):
+        run.font.name = FONT
+        rPr = run._element.get_or_add_rPr()
+        rFonts = rPr.find(qn('w:rFonts'))
+        if rFonts is None:
+            rFonts = OxmlElement('w:rFonts')
+            rPr.insert(0, rFonts)
+        rFonts.set(qn('w:cs'), FONT)
+        if size:
+            run.font.size = Pt(size)
+        if bold:
+            run.font.bold = True
+        if color:
+            run.font.color.rgb = RGBColor(*color)
 
-    # NotoSans covers Latin/numbers; NotoSansGujarati is fallback for Gujarati
-    pdf.add_font('NotoSans', '',  os.path.join(fonts, 'NotoSans-Regular.ttf'))
-    pdf.add_font('NotoSans', 'B', os.path.join(fonts, 'NotoSans-Bold.ttf'))
-    pdf.add_font('NotoGuj',  '',  os.path.join(fonts, 'NotoSansGujarati-Regular.ttf'))
-    pdf.add_font('NotoGuj',  'B', os.path.join(fonts, 'NotoSansGujarati-Bold.ttf'))
-    pdf.set_fallback_fonts(['NotoGuj'])
-    pdf.set_text_shaping(True)  # HarfBuzz GSUB/GPOS for correct Gujarati conjuncts/matras
+    def _cell(cell, text, bold=False, align='left', size=9, bg=None, color=None):
+        p = cell.paragraphs[0]
+        p.alignment = {'center': WD_ALIGN_PARAGRAPH.CENTER,
+                       'right':  WD_ALIGN_PARAGRAPH.RIGHT}.get(align, WD_ALIGN_PARAGRAPH.LEFT)
+        run = p.add_run(str(text))
+        _style(run, size=size, bold=bold, color=color)
+        if bg:
+            tcPr = cell._tc.get_or_add_tcPr()
+            shd = OxmlElement('w:shd')
+            shd.set(qn('w:val'), 'clear')
+            shd.set(qn('w:color'), 'auto')
+            shd.set(qn('w:fill'), bg)
+            tcPr.append(shd)
 
-    W = 170  # usable width mm (A4 210 - 2*20 margins)
+    income = [t for t in transactions if t.type == 'credit']
+    expense = [t for t in transactions if t.type == 'debit']
+    total_income = float(sum(t.amount for t in income))
+    total_expense = float(sum(t.amount for t in expense))
+    difference = total_income - total_expense
+
+    doc = Document()
+    sec = doc.sections[0]
+    sec.page_width = Cm(21); sec.page_height = Cm(29.7)
+    sec.left_margin = sec.right_margin = sec.top_margin = sec.bottom_margin = Cm(1.5)
 
     # ── Header ────────────────────────────────────────────────────────────────
-    pdf.set_font('NotoSans', 'B', 18)
-    pdf.cell(W, 10, 'ACCOUNT STATEMENT', align='C',
-             new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    _style(p.add_run('ACCOUNT STATEMENT'), size=18, bold=True)
 
-    pdf.set_font('NotoSans', 'B', 13)
-    pdf.cell(W, 8, account.name, align='C',
-             new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    _style(p.add_run(account.name), size=13, bold=True)
 
-    pdf.set_font('NotoSans', '', 10)
-    pdf.set_text_color(100, 116, 139)
-    pdf.cell(W, 7, f'Generated: {_fmt_date_long(date.today())}', align='C',
-             new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-    pdf.set_text_color(0, 0, 0)
+    p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    _style(p.add_run(f'Date: {_fmt_date_long(date.today())}'), size=10, color=(100, 116, 139))
 
-    y = pdf.get_y() + 3
-    pdf.set_draw_color(30, 41, 59)
-    pdf.set_line_width(0.5)
-    pdf.line(pdf.l_margin, y, pdf.l_margin + W, y)
-    pdf.set_y(y + 5)
+    doc.add_paragraph()
 
-    # ── Transaction table ─────────────────────────────────────────────────────
-    date_w, credit_w, debit_w = 25, 35, 35
-    desc_w = W - date_w - credit_w - debit_w  # 75 mm
+    # ── 6-column table: [date|details|amount] income + [date|details|amount] expense ──
+    max_r = max(len(income), len(expense))
+    n_rows = max_r + 3  # section header + col header + data rows + totals
 
-    total_credit = Decimal(0)
-    total_debit  = Decimal(0)
-    rows = []
-    for t in transactions:
-        if t.type == 'credit':
-            total_credit += t.amount
-            c_str, d_str = _fmt_inr(float(t.amount)), ''
+    tbl = doc.add_table(rows=n_rows, cols=6)
+    tbl.style = 'Table Grid'
+    for row in tbl.rows:
+        for i, w in enumerate([Cm(2.0), Cm(4.5), Cm(2.5), Cm(2.0), Cm(4.5), Cm(2.5)]):
+            row.cells[i].width = w
+
+    # Row 0: section headers
+    tbl.cell(0, 0).merge(tbl.cell(0, 2))
+    tbl.cell(0, 3).merge(tbl.cell(0, 5))
+    _cell(tbl.cell(0, 0), 'INCOME',  bold=True, align='center', size=11, bg=DARK, color=(255, 255, 255))
+    _cell(tbl.cell(0, 3), 'EXPENSE', bold=True, align='center', size=11, bg=DARK, color=(255, 255, 255))
+
+    # Row 1: column headers
+    for i, lbl in enumerate(['Date', 'Details', 'Amount (₹)', 'Date', 'Details', 'Amount (₹)']):
+        _cell(tbl.cell(1, i), lbl, bold=True, align='center', size=9, bg=LIGHT)
+
+    # Rows 2..n_rows-2: data
+    for ri in range(max_r):
+        r = ri + 2
+        bg = ALT if ri % 2 else WHITE
+        if ri < len(income):
+            t = income[ri]
+            _cell(tbl.cell(r, 0), _fmt_date_short(t.transaction_date), align='center', size=9, bg=bg)
+            _cell(tbl.cell(r, 1), t.description, size=9, bg=bg)
+            _cell(tbl.cell(r, 2), _fmt_inr(t.amount), align='right', size=9, bg=bg)
         else:
-            total_debit += t.amount
-            c_str, d_str = '', _fmt_inr(float(t.amount))
-        rows.append((_fmt_date_short(t.transaction_date), t.description, c_str, d_str))
+            for c in (0, 1, 2): _cell(tbl.cell(r, c), '', size=9, bg=bg)
+        if ri < len(expense):
+            t = expense[ri]
+            _cell(tbl.cell(r, 3), _fmt_date_short(t.transaction_date), align='center', size=9, bg=bg)
+            _cell(tbl.cell(r, 4), t.description, size=9, bg=bg)
+            _cell(tbl.cell(r, 5), _fmt_inr(t.amount), align='right', size=9, bg=bg)
+        else:
+            for c in (3, 4, 5): _cell(tbl.cell(r, c), '', size=9, bg=bg)
 
-    def _tbl_cell(w, h, txt, align='L', fill=False, border='B'):
-        pdf.cell(w, h, txt, align=align, fill=fill, border=border,
-                 new_x=XPos.RIGHT, new_y=YPos.TOP)
+    # Last row: totals
+    tr = n_rows - 1
+    tbl.cell(tr, 0).merge(tbl.cell(tr, 1))
+    tbl.cell(tr, 3).merge(tbl.cell(tr, 4))
+    _cell(tbl.cell(tr, 0), 'TOTAL INCOME',  bold=True, align='right', size=9, bg=LIGHT)
+    _cell(tbl.cell(tr, 2), _fmt_inr(total_income),  bold=True, align='right', size=9, bg=LIGHT)
+    _cell(tbl.cell(tr, 3), 'TOTAL EXPENSE', bold=True, align='right', size=9, bg=LIGHT)
+    _cell(tbl.cell(tr, 5), _fmt_inr(total_expense), bold=True, align='right', size=9, bg=LIGHT)
 
-    # Table header
-    rh = 8
-    pdf.set_font('NotoSans', 'B', 9)
-    pdf.set_fill_color(30, 41, 59)
-    pdf.set_text_color(255, 255, 255)
-    _tbl_cell(date_w,   rh, 'Date',         align='C', fill=True, border=0)
-    _tbl_cell(desc_w,   rh, 'Description',  align='C', fill=True, border=0)
-    _tbl_cell(credit_w, rh, 'Credit (Rs.)', align='C', fill=True, border=0)
-    pdf.cell(debit_w, rh, 'Debit (Rs.)', align='C', fill=True, border=0,
-             new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-    pdf.set_text_color(0, 0, 0)
-
-    # Table rows
-    pdf.set_font('NotoSans', '', 9)
-    rh = 7
-    fill_colors = [(255, 255, 255), (248, 250, 252)]
-    if not rows:
-        pdf.set_fill_color(*fill_colors[0])
-        pdf.set_text_color(100, 116, 139)
-        pdf.cell(W, rh, 'No transactions recorded for this account.',
-                 align='C', fill=True, border='B',
-                 new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-        pdf.set_text_color(0, 0, 0)
-    else:
-        for i, (d, desc, credit, debit) in enumerate(rows):
-            pdf.set_fill_color(*fill_colors[i % 2])
-            _tbl_cell(date_w,   rh, d,      align='C', fill=True)
-            _tbl_cell(desc_w,   rh, desc,   align='L', fill=True)
-            _tbl_cell(credit_w, rh, credit, align='R', fill=True)
-            pdf.cell(debit_w, rh, debit, align='R', fill=True, border='B',
-                     new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    doc.add_paragraph()
 
     # ── Summary ───────────────────────────────────────────────────────────────
-    net = total_credit - total_debit
-    pdf.ln(4)
+    for label, amt, bold in [
+        ('Total Income:',  total_income,  False),
+        ('Total Expense:', total_expense, False),
+        ('Difference:',    difference,    True),
+    ]:
+        p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        _style(p.add_run(f'{label}  {_fmt_inr(amt)}'), size=11, bold=bold)
 
-    lbl_w = W - 45
-    val_w = 45
-
-    pdf.set_font('NotoSans', '', 10)
-    for label, amt in (('Total Credit', total_credit), ('Total Debit', total_debit)):
-        pdf.cell(lbl_w, 7, label, align='R', new_x=XPos.RIGHT, new_y=YPos.TOP)
-        pdf.cell(val_w, 7, _fmt_inr(float(amt)), align='R',
-                 new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-
-    # separator line above Net Difference
-    sep_y = pdf.get_y()
-    pdf.set_draw_color(0, 0, 0)
-    pdf.set_line_width(0.4)
-    pdf.line(pdf.l_margin + lbl_w, sep_y, pdf.l_margin + W, sep_y)
-    pdf.set_y(sep_y)
-
-    pdf.set_font('NotoSans', 'B', 11)
-    pdf.cell(lbl_w, 8, 'Net Difference', align='R', new_x=XPos.RIGHT, new_y=YPos.TOP)
-    pdf.cell(val_w, 8, _fmt_inr(float(net)), align='R',
-             new_x=XPos.LMARGIN, new_y=YPos.NEXT)
-
-    return bytes(pdf.output())
+    buf = BytesIO()
+    doc.save(buf)
+    return buf.getvalue()
 
 
 @app.route('/api/accounts/<account_id>/statement')
@@ -478,11 +481,11 @@ def api_account_statement(account_id):
                 .order_by(Transaction.transaction_date.desc(),
                           Transaction.created_at.desc())
                 .all())
-        pdf_bytes = _generate_statement_pdf(account, txns)
+        docx_bytes = _generate_statement_docx(account, txns)
     return Response(
-        pdf_bytes,
-        mimetype='application/pdf',
-        headers={'Content-Disposition': 'inline; filename="account_statement.pdf"'},
+        docx_bytes,
+        mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        headers={'Content-Disposition': 'attachment; filename="account_statement.docx"'},
     )
 
 

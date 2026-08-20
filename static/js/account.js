@@ -71,7 +71,7 @@ async function refresh() {
 
 function openAddModal(type) {
   document.getElementById('txnTypeInput').value = type;
-  document.getElementById('addTxnTitle').textContent = type === 'credit' ? '+ Add Credit' : '+ Add Debit';
+  document.getElementById('addTxnTitle').textContent = type === 'credit' ? '+ Add Income' : '+ Add Expense';
   document.getElementById('addTxnForm').reset();
   document.getElementById('txnDate').value = new Date().toISOString().split('T')[0];
   document.getElementById('addTxnError').style.display = 'none';
@@ -92,7 +92,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('addCreditBtn').addEventListener('click', () => openAddModal('credit'));
   document.getElementById('addDebitBtn').addEventListener('click', () => openAddModal('debit'));
   document.getElementById('printStatementBtn').addEventListener('click', () => {
-    window.open(API_BASE + `/api/accounts/${accountId}/statement`, '_blank');
+    window.location.href = API_BASE + `/api/accounts/${accountId}/statement`;
   });
   document.getElementById('cancelAddTxn').addEventListener('click', () => closeModal('addTxnModal'));
   document.getElementById('cancelDeleteTxn').addEventListener('click', () => closeModal('deleteTxnModal'));

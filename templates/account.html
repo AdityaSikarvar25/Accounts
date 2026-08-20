@@ -23,40 +23,40 @@
     <!-- Summary cards -->
     <div class="summary-grid">
       <div class="summary-card">
-        <div class="summary-label">Total Credit</div>
+        <div class="summary-label">Total Income</div>
         <div class="summary-value text-credit" id="totalCredit">₹0</div>
       </div>
       <div class="summary-card">
-        <div class="summary-label">Total Debit</div>
+        <div class="summary-label">Total Expense</div>
         <div class="summary-value text-debit" id="totalDebit">₹0</div>
       </div>
       <div class="summary-card summary-balance-card">
-        <div class="summary-label">Balance</div>
+        <div class="summary-label">Difference</div>
         <div class="summary-value text-credit" id="balance">₹0</div>
       </div>
     </div>
 
     <!-- Add buttons -->
     <div class="txn-actions">
-      <button id="addCreditBtn" class="btn btn-add-credit">+ Add Credit</button>
-      <button id="addDebitBtn" class="btn btn-add-debit">+ Add Debit</button>
-      <button id="printStatementBtn" class="btn btn-ghost">&#128438; Print Statement</button>
+      <button id="addCreditBtn" class="btn btn-add-credit">+ Add Income</button>
+      <button id="addDebitBtn" class="btn btn-add-debit">+ Add Expense</button>
+      <button id="printStatementBtn" class="btn btn-ghost">&#128196; Download Statement</button>
     </div>
 
     <!-- Transaction columns -->
     <div class="txn-columns">
       <section class="txn-column">
-        <h2 class="txn-col-title txn-col-credit">Credit</h2>
+        <h2 class="txn-col-title txn-col-credit">Income</h2>
         <div id="creditList"></div>
         <p id="creditEmpty" class="empty-state-small" style="display:none">
-          No credit transactions yet.
+          No income transactions yet.
         </p>
       </section>
       <section class="txn-column">
-        <h2 class="txn-col-title txn-col-debit">Debit</h2>
+        <h2 class="txn-col-title txn-col-debit">Expense</h2>
         <div id="debitList"></div>
         <p id="debitEmpty" class="empty-state-small" style="display:none">
-          No debit transactions yet.
+          No expense transactions yet.
         </p>
       </section>
     </div>

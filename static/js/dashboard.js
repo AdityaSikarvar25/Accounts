@@ -33,16 +33,16 @@ function makeCard(a) {
     <div class="account-card-name">${escHtml(a.name)}</div>
     <div class="account-card-stats">
       <div class="stat-item">
-        <span class="stat-label">Credit</span>
+        <span class="stat-label">Income</span>
         <span class="stat-value text-credit">${formatINR(a.total_credit)}</span>
       </div>
       <div class="stat-item">
-        <span class="stat-label">Debit</span>
+        <span class="stat-label">Expense</span>
         <span class="stat-value text-debit">${formatINR(a.total_debit)}</span>
       </div>
     </div>
     <div class="account-card-balance">
-      <span class="stat-label">Balance</span>
+      <span class="stat-label">Difference</span>
       <span class="balance-value ${a.balance < 0 ? 'text-debit' : 'text-credit'}">${formatINR(a.balance)}</span>
     </div>
     <div class="account-card-actions">
