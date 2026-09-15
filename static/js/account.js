@@ -48,9 +48,24 @@ function makeTxnCard(t, type) {
     <div class="txn-desc">${escHtml(t.description)}</div>
     <div class="txn-date">${formatDate(t.transaction_date)}</div>
     ${t.notes ? `<div class="txn-notes">${escHtml(t.notes)}</div>` : ''}
+    <button class="btn btn-ghost btn-sm btn-edit-txn">Edit</button>
     <button class="btn btn-ghost btn-sm btn-del-txn">Delete</button>`;
+  card.querySelector('.btn-edit-txn').addEventListener('click', () => openEditModal(t));
   card.querySelector('.btn-del-txn').addEventListener('click', () => promptDeleteTxn(t.id));
   return card;
+}
+
+function openEditModal(t) {
+  document.getElementById('editTxnId').value = t.id;
+  document.getElementById('txnTypeInput').value = t.type;
+  document.getElementById('addTxnTitle').textContent = t.type === 'credit' ? 'Edit Income' : 'Edit Expense';
+  document.getElementById('txnAmount').value = t.amount;
+  document.getElementById('txnDesc').value = t.description;
+  document.getElementById('txnDate').value = t.transaction_date;
+  document.getElementById('txnNotes').value = t.notes || '';
+  document.getElementById('addTxnError').style.display = 'none';
+  openModal('addTxnModal');
+  document.getElementById('txnAmount').focus();
 }
 
 function promptDeleteTxn(id) {
@@ -70,6 +85,7 @@ async function refresh() {
 }
 
 function openAddModal(type) {
+  document.getElementById('editTxnId').value = '';
   document.getElementById('txnTypeInput').value = type;
   document.getElementById('addTxnTitle').textContent = type === 'credit' ? '+ Add Income' : '+ Add Expense';
   document.getElementById('addTxnForm').reset();
@@ -94,13 +110,17 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('printStatementBtn').addEventListener('click', () => {
     window.location.href = API_BASE + `/api/accounts/${accountId}/statement`;
   });
-  document.getElementById('cancelAddTxn').addEventListener('click', () => closeModal('addTxnModal'));
+  document.getElementById('cancelAddTxn').addEventListener('click', () => {
+    document.getElementById('editTxnId').value = '';
+    closeModal('addTxnModal');
+  });
   document.getElementById('cancelDeleteTxn').addEventListener('click', () => closeModal('deleteTxnModal'));
 
   document.getElementById('addTxnForm').addEventListener('submit', async e => {
     e.preventDefault();
     const errEl = document.getElementById('addTxnError');
     errEl.style.display = 'none';
+    const editId = document.getElementById('editTxnId').value;
     const body = {
       type: document.getElementById('txnTypeInput').value,
       amount: parseFloat(document.getElementById('txnAmount').value),
@@ -109,14 +129,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       transaction_date: document.getElementById('txnDate').value,
     };
     try {
-      const res = await apiFetch(`/api/accounts/${accountId}/transactions`, {
-        method: 'POST',
-        body: JSON.stringify(body),
-      });
+      const res = editId
+        ? await apiFetch(`/api/transactions/${editId}`, { method: 'PUT', body: JSON.stringify(body) })
+        : await apiFetch(`/api/accounts/${accountId}/transactions`, { method: 'POST', body: JSON.stringify(body) });
       if (!res) return;
       const data = await res.json();
       if (!res.ok) {
-        errEl.textContent = data.error || 'Failed to add transaction';
+        errEl.textContent = data.error || 'Failed to save transaction';
         errEl.style.display = 'block';
         return;
       }
@@ -130,7 +149,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   ['addTxnModal', 'deleteTxnModal'].forEach(id => {
     document.getElementById(id).addEventListener('click', e => {
-      if (e.target.id === id) closeModal(id);
+      if (e.target.id === id) {
+        if (id === 'addTxnModal') document.getElementById('editTxnId').value = '';
+        closeModal(id);
+      }
     });
   });
 });

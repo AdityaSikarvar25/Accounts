@@ -135,6 +135,13 @@ def page_account():
 
 # ── Auth API ──────────────────────────────────────────────────────────────────
 
+@app.route('/api/ping')
+def api_ping():
+    with Session(engine) as db:
+        db.execute(__import__('sqlalchemy').text('SELECT 1'))
+    return jsonify({'ok': True})
+
+
 @app.route('/api/auth-check')
 def api_auth_check():
     return jsonify({'authenticated': bool(session.get('authenticated'))})
@@ -289,6 +296,53 @@ def api_create_transaction(account_id):
         db.commit()
         db.refresh(txn)
         return jsonify(txn_to_dict(txn)), 201
+
+
+@app.route('/api/transactions/<transaction_id>', methods=['PUT'])
+@require_auth
+def api_update_transaction(transaction_id):
+    tid = parse_uuid(transaction_id)
+    if not tid:
+        return jsonify({'error': 'Transaction not found'}), 404
+
+    data = request.get_json() or {}
+
+    txn_type = (data.get('type') or '').strip().lower()
+    if txn_type not in ('credit', 'debit'):
+        return jsonify({'error': 'Type must be credit or debit'}), 400
+
+    try:
+        amount = Decimal(str(data.get('amount') or 0))
+        if amount <= 0:
+            raise ValueError
+    except Exception:
+        return jsonify({'error': 'Please enter a valid positive amount'}), 400
+
+    description = (data.get('description') or '').strip()
+    if not description:
+        return jsonify({'error': 'Description is required'}), 400
+    if len(description) > 500:
+        return jsonify({'error': 'Description is too long (max 500 characters)'}), 400
+
+    try:
+        txn_date = date.fromisoformat(str(data.get('transaction_date') or ''))
+    except (ValueError, TypeError):
+        return jsonify({'error': 'Please provide a valid date'}), 400
+
+    notes = (data.get('notes') or '').strip() or None
+
+    with Session(engine) as db:
+        txn = db.get(Transaction, tid)
+        if not txn:
+            return jsonify({'error': 'Transaction not found'}), 404
+        txn.type = txn_type
+        txn.amount = amount
+        txn.description = description
+        txn.notes = notes
+        txn.transaction_date = txn_date
+        db.commit()
+        db.refresh(txn)
+        return jsonify(txn_to_dict(txn))
 
 
 @app.route('/api/transactions/<transaction_id>', methods=['DELETE'])
