@@ -241,8 +241,8 @@ def api_list_transactions(account_id):
             return jsonify({'error': 'Account not found'}), 404
         txns = (db.query(Transaction)
                 .filter_by(account_id=uid)
-                .order_by(Transaction.transaction_date.desc(),
-                          Transaction.created_at.desc())
+                .order_by(Transaction.transaction_date,
+                          Transaction.created_at)
                 .all())
         return jsonify([txn_to_dict(t) for t in txns])
 
@@ -532,8 +532,8 @@ def api_account_statement(account_id):
             return jsonify({'error': 'Account not found'}), 404
         txns = (db.query(Transaction)
                 .filter_by(account_id=uid)
-                .order_by(Transaction.transaction_date.desc(),
-                          Transaction.created_at.desc())
+                .order_by(Transaction.transaction_date,
+                          Transaction.created_at)
                 .all())
         docx_bytes = _generate_statement_docx(account, txns)
     return Response(
